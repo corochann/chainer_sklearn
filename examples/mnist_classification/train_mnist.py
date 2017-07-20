@@ -23,7 +23,7 @@ import chainer.links as L
 from chainer import training, serializers
 from chainer.training import extensions
 
-sys.path.append(os.pardir)
+sys.path.append(os.path.join(os.pardir, os.pardir))
 from SklearnWrapperClassifier import SklearnWrapperClassifier
 
 

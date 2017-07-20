@@ -24,9 +24,11 @@ import argparse
 import chainer
 from chainer import serializers
 
-from mlp import MLP
 sys.path.append(os.pardir)
+sys.path.append(os.path.join(os.pardir, os.pardir))
+from mlp import MLP
 from SklearnWrapperClassifier import SklearnWrapperClassifier
+
 
 def main():
     parser = argparse.ArgumentParser(description='Chainer example: MNIST')
