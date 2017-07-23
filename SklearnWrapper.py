@@ -9,6 +9,7 @@ import copy
 
 import numpy
 from chainer.datasets import DictDataset, ImageDataset, LabeledImageDataset, TupleDataset
+from chainer.functions import mean_squared_error
 
 from sklearn.base import BaseEstimator, ClassifierMixin
 
@@ -37,8 +38,7 @@ def is_dataset(obj):
                             TupleDataset, DatasetMixin))
 
 
-class SklearnWrapperClassifier(link.Chain, BaseEstimator):
-
+class SklearnBaseWrapper(link.Chain):
     """A simple classifier model.
 
     This is an example of chain that wraps another chain. It computes the
@@ -65,9 +65,8 @@ class SklearnWrapperClassifier(link.Chain, BaseEstimator):
     # cross validation dataset.
     # Which is problematic when we want to use Chainer dataset instead of (X, y) notation
 
-    #_estimator_type = "classifier"  # For sklearn compatibility
-    #__name__ = 'tmp'
-    compute_accuracy = True
+    # _estimator_type = "classifier"  # For sklearn compatibility
+    # __name__ = 'tmp'
 
     def __init__(self,
                  predictor,
@@ -76,7 +75,7 @@ class SklearnWrapperClassifier(link.Chain, BaseEstimator):
                  device=-1,
                  **sk_params
                  ):
-        super(SklearnWrapperClassifier, self).__init__()
+        super(SklearnBaseWrapper, self).__init__()
         if isinstance(predictor, chainer.Link):
             # print('[DEBUG] predictor instance')
             with self.init_scope():
@@ -92,6 +91,7 @@ class SklearnWrapperClassifier(link.Chain, BaseEstimator):
 
         self.lossfun = lossfun
         self.accfun = accfun
+        self.compute_accuracy = accfun is not None
         self.y = None
         self.loss = None
         self.accuracy = None
@@ -106,7 +106,8 @@ class SklearnWrapperClassifier(link.Chain, BaseEstimator):
 
     def update_device(self, device=None):
         if device >= 0:
-            chainer.cuda.get_device(device).use()  # Make a specified GPU current
+            chainer.cuda.get_device(
+                device).use()  # Make a specified GPU current
             self.to_gpu(device)  # Copy the model to the GPU
         else:
             self.to_cpu()  # Copy the model to the CPU
@@ -114,14 +115,15 @@ class SklearnWrapperClassifier(link.Chain, BaseEstimator):
 
     def build(self):
         """build predictor
-        
+
         This function is used when `predictor` is not set at `__init__`.
         """
         if self.predictor_constructor is None:
             print('[ERROR] build_predictor_fn not set, skip.')
         else:
             if hasattr(self, 'predictor'):
-                print("[WARNING] predictor is already set, predictor is overridden")
+                print(
+                    "[WARNING] predictor is already set, predictor is overridden")
                 del self.predictor
             with self.init_scope():
                 self.predictor = self.predictor_constructor(
@@ -160,9 +162,9 @@ class SklearnWrapperClassifier(link.Chain, BaseEstimator):
             reporter.report({'accuracy': self.accuracy}, self)
         return self.loss
 
-    def _predict(self, *args):
+    def _forward(self, *args):
         """Predicts by the model's output by returning `predictor`'s output
-        
+
         """
         if self.predictor is None:
             print("[ERROR] predictor is not set or not build yet.")
@@ -171,45 +173,29 @@ class SklearnWrapperClassifier(link.Chain, BaseEstimator):
             with chainer.no_backprop_mode():
                 return self.predictor(*args)
 
-    def predict(self, *args, batchsize=16, retain_inputs=True):
-        """predict the output
-
-        Args:
-            *args: input
-            batchsize: batchsize to execute predict 
-            retain_inputs: if True, inputs is saved to self.inputs 
-
-        Returns: outputs of the model prediction (calculated by `predictor`)
-
+    def forward_batch(self, *args, batchsize=16, retain_inputs=True,
+                      calc_score=False):
         """
-        proba = self.predict_proba(*args, batchsize=batchsize, retain_inputs=retain_inputs)
-        if isinstance(proba, tuple):
-            # TODO: review. If output of `predict_proba` is multiple,
-            # use first output as probability array
-            proba = proba[0]
-        return numpy.argmax(proba, axis=1)
-
-    def predict_proba(self, *args, batchsize=16, retain_inputs=True, calc_accuracy=False):
-        """predict the output
+        Accuracy is used for score when self.accuracy is True,
+        otherwise, `loss` is used for score calculation.
         
-        Args:
-            *args: input
-            batchsize: batchsize to execute predict 
-            retain_inputs: if True, inputs is saved to self.inputs 
-        Returns: outputs of the model prediction (calculated by `predictor`)
-
+        :param args: 
+        :param batchsize: 
+        :param retain_inputs: 
+        :param calc_score: 
+        :return: 
         """
         data = args[0]
 
         input_list = None
         output_list = None
-        total_accuracy = 0
+        total_score = 0
         for i in range(0, len(data), batchsize):
             inputs = concat_examples(data[i:i + batchsize], device=self.device)
             if not isinstance(inputs, tuple):
                 inputs = (inputs,)
             # print('inputs', inputs, len(inputs))
-            outputs = self._predict(*inputs)
+            outputs = self._forward(*inputs)
             if not isinstance(outputs, tuple):
                 outputs = (outputs,)
             # Init
@@ -221,15 +207,18 @@ class SklearnWrapperClassifier(link.Chain, BaseEstimator):
             if output_list is None:
                 output_list = [[] for _ in range(len(outputs))]
             for j, output in enumerate(outputs):
-                #print(j, 'output', type(output), output.shape)
+                # print(j, 'output', type(output), output.shape)
                 output_list[j].append(cuda.to_cpu(output.data))  # TODO: review
-            if calc_accuracy:
-                total_accuracy += self.accuracy * outputs[0].shape[0]
+            if calc_score:  # TODO: switch accuracy or loss depends on situation.
+                if self.compute_accuracy:
+                    total_score += self.accuracy * outputs[0].shape[0]
+                else:
+                    total_score += self.loss * outputs[0].shape[0]
 
         if retain_inputs:
             self.inputs = [numpy.concatenate(input) for input in input_list]
-        if calc_accuracy:
-            self.total_accuracy = cuda.to_cpu(total_accuracy.data) / len(data)
+        if calc_score:
+            self.total_score = cuda.to_cpu(total_score.data) / len(data)
 
         result = [numpy.concatenate(output) for output in output_list]
         if len(result) == 1:
@@ -253,9 +242,9 @@ class SklearnWrapperClassifier(link.Chain, BaseEstimator):
         """If hyper parameters are set to None, then instance's variable is used,
         this functionality is used Grid search with `set_params` method.
         Also if instance's variable is not set, _default_hyperparam is used. 
-        
+
         Usage: model.fit(train_dataset) or model.fit(X, y)
-        
+
         Args:
             train: training dataset, assumes chainer's dataset class 
             test: test dataset for evaluation, assumes chainer's dataset class
@@ -310,7 +299,7 @@ class SklearnWrapperClassifier(link.Chain, BaseEstimator):
         predictor_kwargs = self.filter_sk_params(self.predictor_constructor)
         if len(predictor_kwargs) > 0:
             self.build()
-        
+
         if not hasattr(self, 'predictor'):
             assert False, 'predictor is not build yet'
 
@@ -342,18 +331,21 @@ class SklearnWrapperClassifier(link.Chain, BaseEstimator):
         _optimizer.setup(self)
 
         # Set up a trainer
-        updater = training.StandardUpdater(train_iter, _optimizer, device=self.device)
+        updater = training.StandardUpdater(train_iter, _optimizer,
+                                           device=self.device)
         trainer = training.Trainer(updater, (epoch, 'epoch'), out=out)
 
         if test_iter is not None:
             # Evaluate the model with the test dataset for each epoch
-            trainer.extend(extensions.Evaluator(test_iter, self, device=self.device))
+            trainer.extend(
+                extensions.Evaluator(test_iter, self, device=self.device))
 
         if dump_graph:
             trainer.extend(extensions.dump_graph('main/loss'))
 
         if snapshot_frequency > 0:
-            trainer.extend(extensions.snapshot(), trigger=(snapshot_frequency, 'epoch'))
+            trainer.extend(extensions.snapshot(),
+                           trigger=(snapshot_frequency, 'epoch'))
 
         if log_report:
             trainer.extend(extensions.LogReport())
@@ -392,7 +384,8 @@ class SklearnWrapperClassifier(link.Chain, BaseEstimator):
     def _infer_entries(self, compute_accuracy, compute_validation):
         if compute_accuracy and compute_validation:
             entries = ['epoch', 'main/loss', 'validation/main/loss',
-             'main/accuracy', 'validation/main/accuracy', 'elapsed_time']
+                       'main/accuracy', 'validation/main/accuracy',
+                       'elapsed_time']
         elif compute_accuracy and not compute_validation:
             entries = ['epoch', 'main/loss', 'main/accuracy', 'elapsed_time']
         elif not compute_accuracy and compute_validation:
@@ -407,7 +400,6 @@ class SklearnWrapperClassifier(link.Chain, BaseEstimator):
         return self.score_core(*args, **kwargs)
 
     def score_core(self, *args, sample_weight=None, batchsize=16):
-        # TODO: currently, batchsize cannot be set for score function
         # during GridSearch, which only assumes score(X, y) interface.
         if len(args) == 1:
             test = args[0]
@@ -420,10 +412,12 @@ class SklearnWrapperClassifier(link.Chain, BaseEstimator):
         else:
             assert False, 'ERROR: train data not specified'
 
-        # TODO: review design.
-        # Currently accuracy is calculated using predict_proba...
-        self.predict_proba(test, batchsize=batchsize, calc_accuracy=True)
-        return self.total_accuracy
+        # For Classifier
+        # `accuracy` is calculated as score, using `forward_batch`
+        # For regressor
+        # `loss` is calculated as score, using `forward_batch`
+        self.forward_batch(test, batchsize=batchsize, retain_inputs=False, calc_score=True)
+        return self.total_score
 
     def get_params(self, deep=True):
         """get_params is used to clone this estimator"""
@@ -449,7 +443,7 @@ class SklearnWrapperClassifier(link.Chain, BaseEstimator):
                         self.predictor = value
                 else:
                     assert False, 'predictor is not Chain instance'
-            elif parameter in ['lossfun',  'accfun', 'device']:
+            elif parameter in ['lossfun', 'accfun', 'device']:
                 setattr(self, parameter, value)
             else:
                 self.sk_params.update({parameter: value})
@@ -464,3 +458,130 @@ class SklearnWrapperClassifier(link.Chain, BaseEstimator):
                 res.update({name: value})
         res.update(override)
         return res
+
+
+class SklearnWrapperClassifier(SklearnBaseWrapper):
+
+    """A simple classifier model.
+
+    This is an example of chain that wraps another chain. It computes the
+    loss and accuracy based on a given input/label pair.
+
+    Args:
+        predictor (~chainer.Link): Predictor network.
+        lossfun (function): Loss function.
+        accfun (function): Function that computes accuracy.
+
+    Attributes:
+        predictor (~chainer.Link): Predictor network or build predictor function.
+        lossfun (function): Loss function.
+        accfun (function): Function that computes accuracy.
+        y (~chainer.Variable): Prediction for the last minibatch.
+        loss (~chainer.Variable): Loss value for the last minibatch.
+        accuracy (~chainer.Variable): Accuracy for the last minibatch.
+        compute_accuracy (bool): If ``True``, compute accuracy on the forward
+            computation. The default value is ``True``.
+
+    """
+    # [Note] Setting _estimator_type to classifier changes the behavior of
+    # `check_cv` for cross validation, to force set the label `y` when creating
+    # cross validation dataset.
+    # Which is problematic when we want to use Chainer dataset instead of (X, y) notation
+
+    #_estimator_type = "classifier"  # For sklearn compatibility
+    #__name__ = 'tmp'
+
+    def __init__(self,
+                 predictor,
+                 lossfun=softmax_cross_entropy.softmax_cross_entropy,
+                 accfun=accuracy.accuracy,
+                 device=-1,
+                 **sk_params
+                 ):
+        super(SklearnWrapperClassifier, self).__init__(
+            predictor,
+            lossfun=lossfun,
+            accfun=accfun,
+            device=device,
+            **sk_params
+        )
+
+    def predict(self, *args, batchsize=16, retain_inputs=True):
+        """predict the output
+
+        Args:
+            *args: input
+            batchsize: batchsize to execute predict 
+            retain_inputs: if True, inputs is saved to self.inputs 
+
+        Returns: outputs of the model prediction (calculated by `predictor`)
+
+        """
+        proba = self.predict_proba(*args, batchsize=batchsize, retain_inputs=retain_inputs)
+        if isinstance(proba, tuple):
+            # TODO: review. If output of `predict_proba` is multiple,
+            # use first output as probability array
+            proba = proba[0]
+        return numpy.argmax(proba, axis=1)
+
+    def predict_proba(self, *args, batchsize=16, retain_inputs=True):
+        """predict the output
+
+        Args:
+            *args: input
+            batchsize: batchsize to execute predict 
+            retain_inputs: if True, inputs is saved to self.inputs 
+        Returns: outputs of the model prediction (calculated by `predictor`)
+
+        """
+        return self.forward_batch(*args, batchsize=batchsize, retain_inputs=retain_inputs)
+
+    def predict_log_proba(self, X):
+        pass
+
+    def decision_function(self, X):
+        pass
+
+    def transform(self, X):
+        pass
+
+    def inverse_transform(self, X):
+        pass
+
+
+class SklearnWrapperRegressor(SklearnBaseWrapper):
+    def __init__(self,
+                 predictor,
+                 lossfun=mean_squared_error,
+                 accfun=None,
+                 device=-1,
+                 **sk_params
+                 ):
+        super(SklearnWrapperRegressor, self).__init__(
+            predictor,
+            lossfun=lossfun,
+            accfun=accfun,
+            device=device,
+            **sk_params
+        )
+
+    def predict(self, *args, batchsize=16, retain_inputs=True):
+        """predict the output
+
+        Args:
+            *args: input
+            batchsize: batchsize to execute predict 
+            retain_inputs: if True, inputs is saved to self.inputs 
+
+        Returns: outputs of the model prediction (calculated by `predictor`)
+
+        """
+        return self.forward_batch(*args, batchsize=batchsize,
+                                  retain_inputs=retain_inputs)
+
+    def transform(self, X):
+        pass
+
+    def inverse_transform(self, X):
+        pass
+

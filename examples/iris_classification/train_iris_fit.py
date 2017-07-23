@@ -28,7 +28,7 @@ from chainer import serializers
 sys.path.append(os.pardir)
 sys.path.append(os.path.join(os.pardir, os.pardir))
 from mlp import MLP
-from SklearnWrapperClassifier import SklearnWrapperClassifier
+from SklearnWrapper import SklearnWrapperClassifier
 
 def main():
     parser = argparse.ArgumentParser(description='Chainer example: MNIST')
@@ -76,7 +76,6 @@ def main():
         dataset = TupleDataset(X, y)
         train_size = int(len(dataset) * 0.7)  # use 70 % of data as train data
         train, test = chainer.datasets.split_dataset_random(dataset, train_size)
-        test = TupleDataset(X, y)
         model.fit(
             train,
             test=test,

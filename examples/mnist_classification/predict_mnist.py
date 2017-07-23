@@ -22,7 +22,7 @@ from chainer import serializers
 
 from mlp import MLP
 sys.path.append(os.pardir)
-from SklearnWrapperClassifier import SklearnWrapperClassifier
+from SklearnWrapper import SklearnWrapperClassifier
 
 
 def main():
