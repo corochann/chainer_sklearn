@@ -7,11 +7,18 @@ Experiment implementation to support sklearn like interface in Chainer
  - `fit` function to train the model, it can be used by following 2 ways:
    - Train with conventional sklearn way, `model.fit(train_x, train_y)`.
    - Train with `train` dataset of Chainer dataset class  by `model.fit(train)`.
+     
+     So that we can also train the model with own dataset (`DatasetMixin` class etc).
 
- - `predict` method to predict the classify result.
- 
- - `predict_proba` method to predict the probability of each category.
+ - `predict` method to predict the classify result for classifier, 
+ predict the actual value for regressor.
 
+   It can be used like `answer[i:j] = model.predict(X[i:j])`, 
+   without considering about batchsize for loop.
+
+ - `predict_proba` method to predict the probability of each category (only for classifier). 
+
+ - `score` method to calculate how much is the model prediction score.
 
 ### `fit` function for training
 
@@ -102,7 +109,7 @@ instead of conventional way (configuring `trainer` explicitly),
 You can execute hyper parameter search using sklearn's `GridSearchCV` or 
 `RandomizedSearchCV` class.
 
-See `examples/train_mnist_gridsearch.py` for the example.
+See `examples/mnist_classification/train_mnist_gridsearch.py` for the example.
 
 Try
 
