@@ -24,6 +24,7 @@ from chainer import reporter
 
 
 import chainer.datasets
+from sklearn.utils import check_array
 
 
 def is_function(obj):
@@ -39,7 +40,7 @@ def is_dataset(obj):
 
 
 class SklearnBaseWrapper(link.Chain):
-    """A simple classifier model.
+    """Base model for chainer sklearn wrapper
 
     This is an example of chain that wraps another chain. It computes the
     loss and accuracy based on a given input/label pair.
@@ -66,16 +67,34 @@ class SklearnBaseWrapper(link.Chain):
     # Which is problematic when we want to use Chainer dataset instead of (X, y) notation
 
     # _estimator_type = "classifier"  # For sklearn compatibility
-    # __name__ = 'tmp'
+    __name__ = 'chainer_sklearn_base_wrapper'
+    _data_x_dtype = numpy.float32
+    _data_y_dtype = numpy.int32
+    _default_n_out = 1
 
     def __init__(self,
-                 predictor,
+                 predictor=None,
                  lossfun=softmax_cross_entropy.softmax_cross_entropy,
                  accfun=accuracy.accuracy,
                  device=-1,
                  **sk_params
                  ):
+        """
+        
+        :param predictor (~chainer.links.Chain): 
+        :param lossfun: loss function
+        :param accfun: accuracy function. When `None` is set, accuracy is not 
+        calculated during the training and `loassfun` is used for `score`.
+        :param device (int): GPU device id. -1 indicates to use CPU.
+        :param sk_params (dict): dict of parameters. This is used for 
+        `GridSearchCV` and `RandomizedSearchCV` internally. 
+        """
         super(SklearnBaseWrapper, self).__init__()
+        if predictor is None:
+            # Temporal counter measure to pass `check_estimator`,
+            # sklearn need to support default constructor
+            # TODO: Should dynamically asign n_out, instead of using magic parameter.
+            predictor = chainer.links.Linear(None, self._default_n_out)
         if isinstance(predictor, chainer.Link):
             # print('[DEBUG] predictor instance')
             with self.init_scope():
@@ -98,15 +117,31 @@ class SklearnBaseWrapper(link.Chain):
         self.inputs = None
 
         # Ensure initialization, necessary for GridSearch
-        self.predictor.to_cpu()
         self.device = -1
+        if hasattr(self, 'predictor'):
+            self.predictor.to_cpu()
         self.update_device(device)
 
         self.sk_params = sk_params
 
+    def _check_X_y(self, X, y=None):
+        """Check type of X and y. 
+
+        It updates the format of X and y (such as dtype, convert sparse matrix 
+        to matrix format etc) if necessary. 
+
+        `X` and `y` might be array (numpy.ndarray or sparse matrix) for sklearn
+        interface, but `X` might be chainer dataset.
+
+        :param X: chainer dataset type or array
+        :param y: None or array
+        :return: 
+        """
+        return X, y
+
     def update_device(self, device=None):
         if device >= 0:
-            chainer.cuda.get_device(
+            chainer.cuda.get_device_from_id(
                 device).use()  # Make a specified GPU current
             self.to_gpu(device)  # Copy the model to the GPU
         else:
@@ -162,18 +197,22 @@ class SklearnBaseWrapper(link.Chain):
             reporter.report({'accuracy': self.accuracy}, self)
         return self.loss
 
-    def _forward(self, *args):
-        """Predicts by the model's output by returning `predictor`'s output
-
+    def _forward(self, *args, calc_score=False):
+        """Forward computation without backward.
+        
+        Predicts by the model's output by returning `predictor`'s output
         """
-        if self.predictor is None:
-            print("[ERROR] predictor is not set or not build yet.")
-            return
-        with chainer.using_config('train', False):
-            with chainer.no_backprop_mode():
+        with chainer.using_config('train', False), chainer.no_backprop_mode():
+            if calc_score:
+                self(*args)
+                return self.y
+            else:
+                if self.predictor is None:
+                    print("[ERROR] predictor is not set or not build yet.")
+                    return
                 return self.predictor(*args)
 
-    def forward_batch(self, *args, batchsize=16, retain_inputs=True,
+    def forward_batch(self, *args, batchsize=16, retain_inputs=False,
                       calc_score=False):
         """
         Accuracy is used for score when self.accuracy is True,
@@ -186,6 +225,7 @@ class SklearnBaseWrapper(link.Chain):
         :return: 
         """
         data = args[0]
+        data, _ = self._check_X_y(data)
 
         input_list = None
         output_list = None
@@ -194,8 +234,9 @@ class SklearnBaseWrapper(link.Chain):
             inputs = concat_examples(data[i:i + batchsize], device=self.device)
             if not isinstance(inputs, tuple):
                 inputs = (inputs,)
-            # print('inputs', inputs, len(inputs))
-            outputs = self._forward(*inputs)
+            #print('forward batch inputs', len(inputs), inputs)
+            #print('forward batch inputs', len(inputs[0]))
+            outputs = self._forward(*inputs, calc_score=calc_score)
             if not isinstance(outputs, tuple):
                 outputs = (outputs,)
             # Init
@@ -203,13 +244,14 @@ class SklearnBaseWrapper(link.Chain):
                 if input_list is None:
                     input_list = [[] for _ in range(len(inputs))]
                 for j, input in enumerate(inputs):
-                    input_list[j].append(cuda.to_cpu(input))  # TODO: review
+                    input_list[j].append(cuda.to_cpu(input))
             if output_list is None:
                 output_list = [[] for _ in range(len(outputs))]
             for j, output in enumerate(outputs):
                 # print(j, 'output', type(output), output.shape)
-                output_list[j].append(cuda.to_cpu(output.data))  # TODO: review
-            if calc_score:  # TODO: switch accuracy or loss depends on situation.
+                output_list[j].append(cuda.to_cpu(output.data))
+            if calc_score:
+                # switch accuracy or loss depends on situation.
                 if self.compute_accuracy:
                     total_score += self.accuracy * outputs[0].shape[0]
                 else:
@@ -226,19 +268,19 @@ class SklearnBaseWrapper(link.Chain):
         else:
             return result
 
-    def predict_log_proba(self, X):
-        pass
+#    def predict_log_proba(self, X):
+#        pass
 
-    def decision_function(self, X):
-        pass
+#    def decision_function(self, X):
+#        pass
 
-    def transform(self, X):
-        pass
+#    def transform(self, X):
+#        pass
 
-    def inverse_transform(self, X):
-        pass
+#    def inverse_transform(self, X):
+#        pass
 
-    def fit(self, *args, **kwargs):
+    def fit(self, X, y=None, **kwargs):
         """If hyper parameters are set to None, then instance's variable is used,
         this functionality is used Grid search with `set_params` method.
         Also if instance's variable is not set, _default_hyperparam is used. 
@@ -265,12 +307,13 @@ class SklearnBaseWrapper(link.Chain):
 
         """
         kwargs = self.filter_sk_params(self.fit_core, kwargs)
-        return self.fit_core(*args, **kwargs)
+        return self.fit_core(X, y, **kwargs)
 
-    def fit_core(self, *args,
+    def fit_core(self, X,
+                 y=None,  # Must be in the second argument
                  test=None,
                  batchsize=16,
-                 epoch=10,
+                 epoch=1,
                  optimizer=None,
                  iterator_class=chainer.iterators.SerialIterator,
                  out='result',
@@ -285,15 +328,14 @@ class SklearnBaseWrapper(link.Chain):
                  extensions_list=None,
                  **kargs
                  ):
-        if len(args) == 1:
-            train = args[0]
-        elif len(args) >= 2:
-            if len(args) >= 3:
-                print('[WARNING]: assuming args as (x, Y)')
-            train = chainer.datasets.TupleDataset(*args)
+        # type check
+        X, y = self._check_X_y(X, y)
+        if y is None:
+            # Assume `X` is chainer dataset.
+            train = X
         else:
-            print('[ERROR]: train data not specified')
-            assert False
+            # Assume `X` and `y` is array.
+            train = chainer.datasets.TupleDataset(X, y)
 
         # Construct predictor if necessary
         predictor_kwargs = self.filter_sk_params(self.predictor_constructor)
@@ -395,23 +437,21 @@ class SklearnBaseWrapper(link.Chain):
             entries = ['epoch', 'main/loss', 'elapsed_time']
         return entries
 
-    def score(self, *args, **kwargs):
+    def score(self, X, y=None, **kwargs):
         kwargs = self.filter_sk_params(self.score_core, kwargs)
-        return self.score_core(*args, **kwargs)
+        return self.score_core(X, y, **kwargs)
 
-    def score_core(self, *args, sample_weight=None, batchsize=16):
+    def score_core(self, X, y=None, sample_weight=None, batchsize=16):
+        # Type check
+        X, y = self._check_X_y(X, y)
         # during GridSearch, which only assumes score(X, y) interface.
-        if len(args) == 1:
-            test = args[0]
-            if isinstance(test, (numpy.ndarray)):  # TODO: reivew
+        if y is None:
+            test = X
+            if isinstance(test, numpy.ndarray):  # TODO: reivew
+                print('score_core numpy.ndarray received...')
                 test = chainer.datasets.TupleDataset(test)
-        elif len(args) >= 2:
-            if len(args) >= 3:
-                print('WARNING: assuming args as (x, Y)')
-            test = chainer.datasets.TupleDataset(*args)
         else:
-            assert False, 'ERROR: train data not specified'
-
+            test = chainer.datasets.TupleDataset(X, y)
         # For Classifier
         # `accuracy` is calculated as score, using `forward_batch`
         # For regressor
@@ -487,26 +527,37 @@ class SklearnWrapperClassifier(SklearnBaseWrapper):
     # `check_cv` for cross validation, to force set the label `y` when creating
     # cross validation dataset.
     # Which is problematic when we want to use Chainer dataset instead of (X, y) notation
-
     #_estimator_type = "classifier"  # For sklearn compatibility
-    #__name__ = 'tmp'
+
+    __name__ = 'chainer_sklearn_wrapper_classifier'
+    _data_x_dtype = numpy.float32
+    _data_y_dtype = numpy.int32
+    _default_n_out = 5  # TODO: This is temporal counter measure to pass test...
+
+    def _check_X_y(self, X, y=None):
+        #print('check_X_y', type(X), type(y))
+        if not is_dataset(X) and not isinstance(X, list):
+            X = check_array(X, dtype=self._data_x_dtype)
+        if y is not None:
+            y = check_array(y, dtype=self._data_y_dtype, ensure_2d=False)
+        return X, y
 
     def __init__(self,
-                 predictor,
+                 predictor=None,
                  lossfun=softmax_cross_entropy.softmax_cross_entropy,
                  accfun=accuracy.accuracy,
                  device=-1,
                  **sk_params
                  ):
         super(SklearnWrapperClassifier, self).__init__(
-            predictor,
+            predictor=predictor,
             lossfun=lossfun,
             accfun=accfun,
             device=device,
             **sk_params
         )
 
-    def predict(self, *args, batchsize=16, retain_inputs=True):
+    def predict(self, *args, batchsize=16, retain_inputs=False):
         """predict the output
 
         Args:
@@ -519,12 +570,10 @@ class SklearnWrapperClassifier(SklearnBaseWrapper):
         """
         proba = self.predict_proba(*args, batchsize=batchsize, retain_inputs=retain_inputs)
         if isinstance(proba, tuple):
-            # TODO: review. If output of `predict_proba` is multiple,
-            # use first output as probability array
             proba = proba[0]
         return numpy.argmax(proba, axis=1)
 
-    def predict_proba(self, *args, batchsize=16, retain_inputs=True):
+    def predict_proba(self, *args, batchsize=16, retain_inputs=False):
         """predict the output
 
         Args:
@@ -536,36 +585,56 @@ class SklearnWrapperClassifier(SklearnBaseWrapper):
         """
         return self.forward_batch(*args, batchsize=batchsize, retain_inputs=retain_inputs)
 
-    def predict_log_proba(self, X):
-        pass
+#    def predict_log_proba(self, X):
+#        pass
 
-    def decision_function(self, X):
-        pass
+#    def decision_function(self, X):
+#        pass
 
-    def transform(self, X):
-        pass
+#    def transform(self, X):
+#        pass
 
-    def inverse_transform(self, X):
-        pass
+#    def inverse_transform(self, X):
+#        pass
 
 
 class SklearnWrapperRegressor(SklearnBaseWrapper):
+    __name__ = 'chainer_sklearn_wrapper_regressor'
+    _data_x_dtype = numpy.float32
+    _data_y_dtype = numpy.float32
+    _default_n_out = 1
+
+    def _check_X_y(self, X, y=None):
+        """
+        
+        :param X: 
+        :param y (~numpy.ndarray):
+        :return: 
+        """
+        if not is_dataset(X) and not isinstance(X, list):
+            X = check_array(X, dtype=self._data_x_dtype)
+        if y is not None:
+            y = check_array(y, dtype=self._data_y_dtype, ensure_2d=False)
+            if y.ndim == 1:
+                y = y[:, None]
+        return X, y
+
     def __init__(self,
-                 predictor,
+                 predictor=None,
                  lossfun=mean_squared_error,
                  accfun=None,
                  device=-1,
                  **sk_params
                  ):
         super(SklearnWrapperRegressor, self).__init__(
-            predictor,
+            predictor=predictor,
             lossfun=lossfun,
             accfun=accfun,
             device=device,
             **sk_params
         )
 
-    def predict(self, *args, batchsize=16, retain_inputs=True):
+    def predict(self, *args, batchsize=16, retain_inputs=False):
         """predict the output
 
         Args:
@@ -579,9 +648,9 @@ class SklearnWrapperRegressor(SklearnBaseWrapper):
         return self.forward_batch(*args, batchsize=batchsize,
                                   retain_inputs=retain_inputs)
 
-    def transform(self, X):
-        pass
+#    def transform(self, X):
+#        pass
 
-    def inverse_transform(self, X):
-        pass
+#    def inverse_transform(self, X):
+#        pass
 

@@ -12,7 +12,11 @@ import sys
 
 from chainer.dataset import concat_examples
 from sklearn import grid_search
-from sklearn.grid_search import GridSearchCV, RandomizedSearchCV
+#from sklearn.grid_search import GridSearchCV, RandomizedSearchCV
+from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
+import numpy as np
+
+from train_regression_fit import load_data
 
 try:
     import matplotlib
@@ -27,7 +31,7 @@ from chainer import serializers
 sys.path.append(os.pardir)
 sys.path.append(os.path.join(os.pardir, os.pardir))
 from mlp import MLP
-from SklearnWrapper import SklearnWrapperClassifier
+from SklearnWrapper import SklearnWrapperClassifier, SklearnWrapperRegressor
 
 
 def main():
@@ -56,13 +60,19 @@ def main():
     print('# epoch: {}'.format(args.epoch))
     print('')
 
-    # Load the MNIST dataset
-    train, test = chainer.datasets.get_mnist()
+    # Load the iris dataset
+    data, target = load_data()
+    X = data.reshape((-1, 1)).astype(np.float32)
+    y = target.reshape((-1, 1)).astype(np.float32)
+
+    print('X,y', X.shape, y.shape)
+
+
 
     if args.example == 1:
         print("Example 1. simple hyper parameter search")
-        predictor = MLP(args.unit, 10)
-        model = SklearnWrapperClassifier(predictor, device=args.gpu)
+        predictor = MLP(args.unit, 1)
+        model = SklearnWrapperRegressor(predictor, device=args.gpu)
         optimizer1 = chainer.optimizers.SGD()
         optimizer2 = chainer.optimizers.Adam()
         gs = GridSearchCV(model,
@@ -81,12 +91,13 @@ def main():
     elif args.example == 2:
         print("Example 2. search predictor's hyper parameter")
         predictor_constructor = MLP
-        model = SklearnWrapperClassifier(predictor_constructor, device=args.gpu)
+        model = SklearnWrapperRegressor(predictor_constructor, device=args.gpu)
         optimizer = chainer.optimizers.Adam()
         gs = GridSearchCV(model,
                           {
                               # n_units is an argument for predictor_constructor
                               'n_units': [10, 50, 100],
+                              'n_out': [1],
                               # 'batchsize', 'epoch' can be used as hyperparameter
                               'batchsize': [100]
                           },
@@ -102,11 +113,11 @@ def main():
         print("Example 3. search optimizer's hyper parameter")
 
         def build_mlp(n_units=100):
-            return MLP(n_units, n_out=10)
+            return MLP(n_units, n_out=1)
 
         # You may also use function as predictor constructor
         predictor_constructor = build_mlp
-        model = SklearnWrapperClassifier(predictor_constructor, device=args.gpu)
+        model = SklearnWrapperRegressor(predictor_constructor, device=args.gpu)
         optimizer_constructor = chainer.optimizers.Adam
         gs = GridSearchCV(model,
                           {
@@ -127,13 +138,14 @@ def main():
     elif args.example == 4:
         print("Example 4. Randomized Search")
 
-        model = SklearnWrapperClassifier(MLP, device=args.gpu)
+        model = SklearnWrapperRegressor(MLP, device=args.gpu)
         optimizer1 = chainer.optimizers.SGD()
         optimizer2 = chainer.optimizers.MomentumSGD()
         optimizer3 = chainer.optimizers.Adam()
         gs = RandomizedSearchCV(model,
                                 {
                                     'n_units': [10, 50, 100, 500, 1000],
+                                    'n_out': [1],
                                     # hyperparameter search for different optimizers
                                     'optimizer': [optimizer1, optimizer2, optimizer3],
                                     # 'batchsize', 'epoch' can be used as hyperparameter
@@ -146,7 +158,7 @@ def main():
                                 }, verbose=2)
     else:
         assert False, 'args.example took invalid value!'
-    gs.fit(train)
+    gs.fit(X, y)
     print('The parameters of the best model: {}'.format(gs.best_params_))
 
     best_model = gs.best_estimator_

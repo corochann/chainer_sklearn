@@ -109,8 +109,8 @@ instead of conventional way (configuring `trainer` explicitly),
 You can execute hyper parameter search using sklearn's `GridSearchCV` or 
 `RandomizedSearchCV` class.
 
-See `examples/mnist_classification/train_mnist_gridsearch.py` for the example.
+See `examples/mnist_classification/train_mnist_param_search.py` for the example.
 
 Try
 
-`python train_mnist_gridsearch.py --ex example_id -g gpu_id`
+`python train_mnist_param_search.py --ex example_id -g gpu_id`

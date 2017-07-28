@@ -28,6 +28,7 @@ from SklearnWrapper import SklearnWrapperClassifier, SklearnWrapperRegressor
 
 
 def black_box_fn(x_data):
+    # sine wave with added Gaussian noise
     return np.sin(x_data) + np.random.normal(0, 0.1, x_data.shape)
 
 
