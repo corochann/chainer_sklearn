@@ -24,8 +24,8 @@ import chainer.links as L
 from chainer import training, serializers
 from chainer.training import extensions
 
-sys.path.append(os.path.join(os.pardir, os.pardir))
-from SklearnWrapper import SklearnWrapperClassifier
+from mlp import MLP
+from chainer_sklearn.links import SklearnWrapperClassifier
 
 
 # Network definition

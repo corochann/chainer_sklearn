@@ -7,6 +7,13 @@ Experiment implementation to support sklearn like interface in Chainer
 pip install git+https://github.com/corochann/chainer-sklearn-wrapper
 ```
 
+or 
+
+```
+git clone https://github.com/corochann/chainer-sklearn-wrapper
+python setup.py install
+```
+
 ## Supported interface
 
  - `fit` function to train the model, it can be used by following 2 ways:
@@ -34,6 +41,8 @@ See `examples/train_mnist_fit.py` and try
 
 You can write training code as follows,
 ```angular2html
+    from chainer_sklearn.links import SklearnWrapperClassifier
+
     train, test = chainer.datasets.get_mnist()
 
     model = SklearnWrapperClassifier(MLP(args.unit, 10))    

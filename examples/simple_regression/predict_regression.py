@@ -22,8 +22,7 @@ import matplotlib.pyplot as plt
 from chainer import serializers
 
 from mlp import MLP
-sys.path.append(os.pardir)
-from SklearnWrapper import SklearnWrapperRegressor
+from chainer_sklearn.links import SklearnWrapperRegressor
 
 
 def main():
