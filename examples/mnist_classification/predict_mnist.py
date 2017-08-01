@@ -3,10 +3,11 @@
 model must be trained before inference, train_mnist_4_trainer.py must be executed beforehand.
 """
 from __future__ import print_function
+
+import argparse
 import os
 import sys
 
-import argparse
 import numpy as np
 
 try:

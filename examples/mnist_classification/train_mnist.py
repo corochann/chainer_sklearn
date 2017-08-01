@@ -6,6 +6,7 @@ https://github.com/chainer/chainer/blob/master/examples/mnist/train_mnist.py
 But SklearnWrapperClassifier is used instead of L.Classifier 
 """
 from __future__ import print_function
+
 import os
 import sys
 

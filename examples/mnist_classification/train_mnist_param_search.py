@@ -7,12 +7,11 @@ But SklearnWrapperClassifier fit method is used for training,
 instead of explicitly configure trainer.
 """
 from __future__ import print_function
+
 import os
 import sys
 
-from chainer.dataset import concat_examples
-from sklearn import grid_search
-#from sklearn.grid_search import GridSearchCV, RandomizedSearchCV
+# from sklearn.grid_search import GridSearchCV, RandomizedSearchCV
 from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
 
 try:

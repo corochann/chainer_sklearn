@@ -3,10 +3,11 @@
 model must be trained before inference, train_mnist_4_trainer.py must be executed beforehand.
 """
 from __future__ import print_function
+
+import argparse
 import os
 import sys
 
-import argparse
 import numpy as np
 
 from train_regression_fit import load_data
@@ -18,13 +19,11 @@ except ImportError:
     pass
 import matplotlib.pyplot as plt
 
-import chainer
-import chainer.functions as F
 from chainer import serializers
 
 from mlp import MLP
 sys.path.append(os.pardir)
-from SklearnWrapper import SklearnWrapperClassifier, SklearnWrapperRegressor
+from SklearnWrapper import SklearnWrapperRegressor
 
 
 def main():

@@ -7,6 +7,7 @@ But SklearnWrapperClassifier fit method is used for training,
 instead of explicitly configure trainer.
 """
 from __future__ import print_function
+
 import os
 import sys
 

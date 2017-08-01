@@ -3,13 +3,12 @@ SklearnWrapperRegressor fit method is used for training,
 instead of explicitly configure trainer.
 """
 from __future__ import print_function
+
 import os
 import sys
-import numpy as np
 
-from chainer.dataset import concat_examples
+import numpy as np
 from chainer.datasets import TupleDataset
-from sklearn.datasets import load_iris
 
 try:
     import matplotlib
@@ -24,7 +23,7 @@ from chainer import serializers
 sys.path.append(os.pardir)
 sys.path.append(os.path.join(os.pardir, os.pardir))
 from mlp import MLP
-from SklearnWrapper import SklearnWrapperClassifier, SklearnWrapperRegressor
+from SklearnWrapper import SklearnWrapperRegressor
 
 
 def black_box_fn(x_data):

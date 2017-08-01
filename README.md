@@ -1,6 +1,11 @@
 # Chainer-sklearn-wrapper
 Experiment implementation to support sklearn like interface in Chainer
 
+## How to install
+
+```
+pip install git+https://github.com/corochann/chainer-sklearn-wrapper
+```
 
 ## Supported interface
 
