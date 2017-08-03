@@ -243,7 +243,7 @@ class SklearnBaseWrapper(link.Chain):
                 return fn(*filter_args(fn, args))
 
     def forward_batch(self, *args, batchsize=16, retain_inputs=False,
-                      calc_score=False):
+                      calc_score=False, converter=concat_examples):
         """
         Accuracy is used for score when self.accuracy is True,
         otherwise, `loss` is used for score calculation.
@@ -252,6 +252,7 @@ class SklearnBaseWrapper(link.Chain):
         :param batchsize: 
         :param retain_inputs: 
         :param calc_score: 
+        :param converter: 
         :return: 
         """
         # data may be "train_x array" or "chainer dataset"
@@ -262,7 +263,7 @@ class SklearnBaseWrapper(link.Chain):
         output_list = None
         total_score = 0
         for i in range(0, len(data), batchsize):
-            inputs = concat_examples(data[i:i + batchsize], device=self.device)
+            inputs = converter(data[i:i + batchsize], device=self.device)
             if not isinstance(inputs, tuple):
                 inputs = (inputs,)
             #print('forward batch inputs', len(inputs), inputs)
@@ -344,8 +345,7 @@ class SklearnBaseWrapper(link.Chain):
                  y=None,  # Must be in the second argument
                  test=None,
                  batchsize=16,
-                 epoch=10
-                 ,
+                 epoch=10,
                  optimizer=None,
                  iterator_class=chainer.iterators.SerialIterator,
                  out='result',
@@ -358,6 +358,7 @@ class SklearnBaseWrapper(link.Chain):
                  progress_report=True,
                  resume=None,
                  extensions_list=None,
+                 converter=concat_examples,
                  **kargs
                  ):
         # type check
@@ -406,7 +407,8 @@ class SklearnBaseWrapper(link.Chain):
 
         # Set up a trainer
         updater = training.StandardUpdater(train_iter, _optimizer,
-                                           device=self.device)
+                                           device=self.device,
+                                           converter=converter)
         trainer = training.Trainer(updater, (epoch, 'epoch'), out=out)
 
         if test_iter is not None:
@@ -521,7 +523,6 @@ class SklearnBaseWrapper(link.Chain):
                 self.sk_params.update({parameter: value})
         return self
 
-
     def filter_sk_params(self, fn, override=None):
         override = override or {}
         res = {}
@@ -590,33 +591,42 @@ class SklearnWrapperClassifier(SklearnBaseWrapper):
             **sk_params
         )
 
-    def predict(self, *args, batchsize=16, retain_inputs=False):
+    def predict(self, *args, batchsize=16, retain_inputs=False,
+                converter=concat_examples):
         """predict the output
 
         Args:
             *args: input
             batchsize: batchsize to execute predict 
             retain_inputs: if True, inputs is saved to self.inputs 
+            converter:
 
         Returns: outputs of the model prediction (calculated by `predictor`)
 
         """
-        proba = self.predict_proba(*args, batchsize=batchsize, retain_inputs=retain_inputs)
+        proba = self.predict_proba(*args, batchsize=batchsize,
+                                   retain_inputs=retain_inputs,
+                                   converter=converter)
         if isinstance(proba, tuple):
             proba = proba[0]
         return numpy.argmax(proba, axis=1)
 
-    def predict_proba(self, *args, batchsize=16, retain_inputs=False):
+    def predict_proba(self, *args, batchsize=16, retain_inputs=False,
+                      converter=concat_examples):
         """predict the output
 
         Args:
             *args: input
             batchsize: batchsize to execute predict 
             retain_inputs: if True, inputs is saved to self.inputs 
+            converter
+            
         Returns: outputs of the model prediction (calculated by `predictor`)
 
         """
-        return self.forward_batch(*args, batchsize=batchsize, retain_inputs=retain_inputs)
+        return self.forward_batch(*args, batchsize=batchsize,
+                                  retain_inputs=retain_inputs,
+                                  converter=converter)
 
 #    def predict_log_proba(self, X):
 #        pass
@@ -667,19 +677,22 @@ class SklearnWrapperRegressor(SklearnBaseWrapper):
             **sk_params
         )
 
-    def predict(self, *args, batchsize=16, retain_inputs=False):
+    def predict(self, *args, batchsize=16, retain_inputs=False,
+                converter=concat_examples):
         """predict the output
 
         Args:
             *args: input
             batchsize: batchsize to execute predict 
             retain_inputs: if True, inputs is saved to self.inputs 
+            converter
 
         Returns: outputs of the model prediction (calculated by `predictor`)
 
         """
         return self.forward_batch(*args, batchsize=batchsize,
-                                  retain_inputs=retain_inputs)
+                                  retain_inputs=retain_inputs,
+                                  converter=converter)
 
 #    def transform(self, X):
 #        pass

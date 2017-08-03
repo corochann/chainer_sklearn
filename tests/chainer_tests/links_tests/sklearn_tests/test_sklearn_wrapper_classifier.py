@@ -11,9 +11,8 @@ from sklearn.datasets import load_iris
 
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-
-
 from chainer_sklearn.links import SklearnWrapperClassifier
+
 
 class MLP(chainer.Chain):
     def __init__(self):
