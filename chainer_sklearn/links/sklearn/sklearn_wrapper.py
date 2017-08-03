@@ -39,6 +39,30 @@ def is_dataset(obj):
                             TupleDataset, DatasetMixin))
 
 
+def filter_args(fn, args_tuple):
+    """Extract only necessary number of arguments from `args_tuple` for `fn`
+
+    For example if fn is defined as `fn(x)`, and `args = (x, y)`,  
+    you want to pass only `x` to `fn`. 
+    However `fn(*args)` will fail.
+    Instead, you can use `fn(*filter_args(fn, args))` to pass only first 
+    argument `x` to `fn`.
+
+    :param fn: 
+    :param args_tuple: 
+    :return: 
+    """
+    sig = inspect.signature(fn)
+    flag_var_positional = any([
+        inspect.Parameter.VAR_POSITIONAL == value.kind for
+        value in sig.parameters.values()])
+    if flag_var_positional:
+        return args_tuple
+    else:
+        num_args = len(sig.parameters.items())
+        return args_tuple[:num_args]
+
+
 class SklearnBaseWrapper(link.Chain):
     """Base model for chainer sklearn wrapper
 
@@ -210,7 +234,13 @@ class SklearnBaseWrapper(link.Chain):
                 if self.predictor is None:
                     print("[ERROR] predictor is not set or not build yet.")
                     return
-                return self.predictor(*args)
+                # TODO: it passes all the args, sometimes (x, y) which is too many arguments.
+                # Consider how to deal with the number of input
+                if hasattr(self.predictor, '_forward'):
+                    fn = self.predictor._forward
+                else:
+                    fn = self.predictor
+                return fn(*filter_args(fn, args))
 
     def forward_batch(self, *args, batchsize=16, retain_inputs=False,
                       calc_score=False):
@@ -224,6 +254,7 @@ class SklearnBaseWrapper(link.Chain):
         :param calc_score: 
         :return: 
         """
+        # data may be "train_x array" or "chainer dataset"
         data = args[0]
         data, _ = self._check_X_y(data)
 
@@ -313,7 +344,8 @@ class SklearnBaseWrapper(link.Chain):
                  y=None,  # Must be in the second argument
                  test=None,
                  batchsize=16,
-                 epoch=1,
+                 epoch=10
+                 ,
                  optimizer=None,
                  iterator_class=chainer.iterators.SerialIterator,
                  out='result',
@@ -488,6 +520,7 @@ class SklearnBaseWrapper(link.Chain):
             else:
                 self.sk_params.update({parameter: value})
         return self
+
 
     def filter_sk_params(self, fn, override=None):
         override = override or {}
