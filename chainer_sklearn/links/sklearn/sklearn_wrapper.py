@@ -414,7 +414,8 @@ class SklearnBaseWrapper(link.Chain):
         if test_iter is not None:
             # Evaluate the model with the test dataset for each epoch
             trainer.extend(
-                extensions.Evaluator(test_iter, self, device=self.device))
+                extensions.Evaluator(test_iter, self, device=self.device,
+                                     converter=converter))
 
         if dump_graph:
             trainer.extend(extensions.dump_graph('main/loss'))
