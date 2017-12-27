@@ -660,7 +660,11 @@ class SklearnWrapperRegressor(SklearnBaseWrapper):
         :return: 
         """
         if not is_dataset(X) and not isinstance(X, list):
-            X = check_array(X, dtype=self._data_x_dtype)
+            if isinstance(X, numpy.ndarray):
+                X = check_array(X, dtype=self._data_x_dtype)
+            else:
+                print('[WARNING] skip check type for dataset X with type {}'
+                      .format(type(X)))
         if y is not None:
             y = check_array(y, dtype=self._data_y_dtype, ensure_2d=False)
             if y.ndim == 1:
